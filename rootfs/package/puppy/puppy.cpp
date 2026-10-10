@@ -669,7 +669,7 @@ private:
 
         if (battery >= 0 && battery <= kLowBatteryPercent && !charging) {
             const std::string warning = "LOW BATTERY";
-            drawText(renderer, uiFont, warning, batteryX - 16 - textWidth(uiFont, warning), kHeaderTextYMargin, kYellow);
+            drawText(renderer, uiFont, warning, (kScreenW - textWidth(uiFont, warning)) / 2, kHeaderTextYMargin, kYellow);
         }
 
         const Entry* e = m.selected();
