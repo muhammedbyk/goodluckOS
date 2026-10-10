@@ -152,7 +152,9 @@
 
 &codec {
     status = "okay";
-    allwinner,audio-routing = "Speaker", "HP";
+    allwinner,audio-routing = "Speaker", "HP",
+        "Headphone", "HP",
+        "Headphone", "HPCOM";	/* direct drive: the jack's return is HPCOM */
     allwinner,pa-gpios = <&pio 7 9 GPIO_ACTIVE_HIGH>; /* PH09 */
 };
 
@@ -196,6 +198,7 @@
 
     panel@0 {
         compatible = "boe,jd9366";
+        panel-id = <1>;
         reg = <0>;
         power-supply = <&reg_dc1sw>;
         reset-gpios = <&pio 7 7 GPIO_ACTIVE_LOW>;
