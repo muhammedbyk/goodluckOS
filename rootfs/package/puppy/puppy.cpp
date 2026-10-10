@@ -555,6 +555,19 @@ static void restoreCursor(Model& m) {
 
 static bool batteryCharging = false; // as of the last readBattery()
 
+// Percent for a resting cell voltage, from the usual single-cell Li-ion curve.
+static int percentFromVoltage(long microvolts) {
+    static const int curve[][2] = {{3270, 0}, {3610, 5}, {3690, 10}, {3730, 20}, {3770, 30}, {3800, 40},
+                                   {3840, 50}, {3870, 60}, {3950, 70}, {4020, 80}, {4110, 90}, {4200, 100}};
+    const int n = sizeof curve / sizeof curve[0];
+    const int mv = (int)(microvolts / 1000);
+    if (mv <= curve[0][0]) return 0;
+    for (int i = 1; i < n; ++i)
+        if (mv <= curve[i][0])
+            return curve[i - 1][1] + (curve[i][1] - curve[i - 1][1]) * (mv - curve[i - 1][0]) / (curve[i][0] - curve[i - 1][0]);
+    return 100;
+}
+
 static int readBattery() {
     std::error_code ec;
     for (fs::directory_iterator it("/sys/class/power_supply", ec), end; !ec && it != end; it.increment(ec)) {
@@ -564,9 +577,15 @@ static int readBattery() {
         std::ifstream capFile(it->path() / "capacity");
         int cap;
         if (capFile >> cap) {
-            std::ifstream statusFile(it->path() / "status");
+            std::ifstream statusFile(it->path() / "status"), voltageFile(it->path() / "voltage_now");
             std::string status;
-            batteryCharging = (statusFile >> status) && status == "Charging";
+            statusFile >> status;
+            batteryCharging = status == "Charging";
+            // The AXP223 fuel gauge can sit at 5% (it has to learn the battery) while the cell is fuller.
+            // At 5% or less, while discharging, a cell voltage that reads higher than that wins.
+            long microvolts;
+            if (cap <= 5 && status == "Discharging" && (voltageFile >> microvolts))
+                cap = std::max(cap, percentFromVoltage(microvolts));
             return std::clamp(cap, 0, 100);
         }
     }
