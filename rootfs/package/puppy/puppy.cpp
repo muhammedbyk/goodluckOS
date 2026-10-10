@@ -657,8 +657,14 @@ private:
     void drawText_(const Model& m, int battery, bool charging) {
         const int maxW = kScreenW - 2 * kTextMargin;
 
+        // The warning sits at the top centre, so a long category title stops short of it.
+        const bool lowBattery = battery >= 0 && battery <= kLowBatteryPercent && !charging;
+        const std::string warning = "LOW BATTERY";
+        const int warningX = (kScreenW - textWidth(uiFont, warning)) / 2;
+        const int titleMaxW = lowBattery ? warningX - 8 - kTextMargin : maxW;
+
         if (!m.categories.empty())
-            drawText(renderer, uiFont, m.categories[m.row].name, kTextMargin, kHeaderTextYMargin, kWhite, maxW);
+            drawText(renderer, uiFont, m.categories[m.row].name, kTextMargin, kHeaderTextYMargin, kWhite, titleMaxW);
 
         std::string s;
         if (battery >= 0) {
@@ -669,10 +675,8 @@ private:
         const int batteryX = kScreenW - kTextMargin - textWidth(uiFont, s);
         drawText(renderer, uiFont, s, batteryX, kHeaderTextYMargin, kWhite);
 
-        if (battery >= 0 && battery <= kLowBatteryPercent && !charging) {
-            const std::string warning = "LOW BATTERY";
-            drawText(renderer, uiFont, warning, (kScreenW - textWidth(uiFont, warning)) / 2, kHeaderTextYMargin, kYellow);
-        }
+        if (lowBattery)
+            drawText(renderer, uiFont, warning, warningX, kHeaderTextYMargin, kYellow);
 
         const Entry* e = m.selected();
         if (!e) return;
