@@ -47,12 +47,13 @@ constexpr Uint32 kRepeatRateMs      = 60;   // ...and then this often
 constexpr int kStickPress           = 16000; // left stick counts as a direction past about half travel...
 constexpr int kStickRelease         = 8000;  // ...and lets go below about a quarter (axes span +-32767)
 constexpr size_t kMaxCachedIcons    = 64;
-constexpr int kLowBatteryPercent    = 5;    // at or below this (and not charging) the header warns
+constexpr int kLowBatteryPercent    = 5;    // at or below this, and not charging, the header warns
 
 constexpr SDL_Color kWhite  {255, 255, 255, 255};
 constexpr SDL_Color kGrey   {170, 170, 170, 255};
 constexpr SDL_Color kBlack  {0, 0, 0, 255};
 constexpr SDL_Color kYellow {255, 205, 60, 255};
+constexpr SDL_Color kGreen  {80, 220, 100, 255};
 constexpr SDL_Color kTile   {40, 40, 44, 255};
 constexpr SDL_Color kClear  {24, 24, 28, 255};
 
@@ -552,7 +553,9 @@ static void restoreCursor(Model& m) {
     if (m.find(category, name, r, c)) { m.row = r; m.categories[r].col = c; }
 }
 
-static int readBattery(bool* charging = nullptr) {
+static bool batteryCharging = false; // as of the last readBattery()
+
+static int readBattery() {
     std::error_code ec;
     for (fs::directory_iterator it("/sys/class/power_supply", ec), end; !ec && it != end; it.increment(ec)) {
         std::ifstream typeFile(it->path() / "type");
@@ -561,11 +564,9 @@ static int readBattery(bool* charging = nullptr) {
         std::ifstream capFile(it->path() / "capacity");
         int cap;
         if (capFile >> cap) {
-            if (charging) {
-                std::ifstream statusFile(it->path() / "status");
-                std::string status;
-                *charging = (statusFile >> status) && status == "Charging";
-            }
+            std::ifstream statusFile(it->path() / "status");
+            std::string status;
+            batteryCharging = (statusFile >> status) && status == "Charging";
             return std::clamp(cap, 0, 100);
         }
     }
@@ -623,7 +624,7 @@ public:
 
     bool ok() const { return ok_; }
 
-    void render(const Model& m, int battery, bool charging) {
+    void render(const Model& m, int battery) {
         SDL_SetRenderDrawColor(renderer, kClear.r, kClear.g, kClear.b, kClear.a);
         SDL_RenderClear(renderer);
 
@@ -642,7 +643,7 @@ public:
         }
 
         if (overlay) SDL_RenderCopy(renderer, overlay, nullptr, nullptr);
-        drawText_(m, battery, charging);
+        drawText_(m, battery);
         SDL_RenderPresent(renderer);
     }
 
@@ -654,17 +655,18 @@ private:
     TTF_Font *uiFont = nullptr, *titleFont = nullptr, *descFont = nullptr, *badgeFont = nullptr;
     std::unique_ptr<IconCache> icons;
 
-    void drawText_(const Model& m, int battery, bool charging) {
+    void drawText_(const Model& m, int battery) {
         const int maxW = kScreenW - 2 * kTextMargin;
 
-        // The warning sits at the top centre, so a long category title stops short of it.
-        const bool lowBattery = battery >= 0 && battery <= kLowBatteryPercent && !charging;
-        const std::string warning = "LOW BATTERY";
-        const int warningX = (kScreenW - textWidth(uiFont, warning)) / 2;
-        const int titleMaxW = lowBattery ? warningX - 8 - kTextMargin : maxW;
+        // Top-centre status; a long category title stops short of it.
+        const std::string status = battery < 0 ? "" : batteryCharging ? "CHARGING"
+                                 : battery <= kLowBatteryPercent ? "LOW BATTERY" : "";
+        const int statusX = (kScreenW - textWidth(uiFont, status)) / 2;
+        const int titleMaxW = status.empty() ? maxW : statusX - 8 - kTextMargin;
 
         if (!m.categories.empty())
             drawText(renderer, uiFont, m.categories[m.row].name, kTextMargin, kHeaderTextYMargin, kWhite, titleMaxW);
+        drawText(renderer, uiFont, status, statusX, kHeaderTextYMargin, batteryCharging ? kGreen : kYellow);
 
         std::string s;
         if (battery >= 0) {
@@ -672,11 +674,7 @@ private:
         } else {
             s = "??";
         }
-        const int batteryX = kScreenW - kTextMargin - textWidth(uiFont, s);
-        drawText(renderer, uiFont, s, batteryX, kHeaderTextYMargin, kWhite);
-
-        if (lowBattery)
-            drawText(renderer, uiFont, warning, warningX, kHeaderTextYMargin, kYellow);
+        drawText(renderer, uiFont, s, kScreenW - kTextMargin - textWidth(uiFont, s), kHeaderTextYMargin, kWhite);
 
         const Entry* e = m.selected();
         if (!e) return;
@@ -772,7 +770,6 @@ int main() {
     bool running = true;
     bool dirty = true;
     int shownBattery = -2;
-    bool shownCharging = false;
     Uint32 lastActivity = SDL_GetTicks();
     Action held = Action::None;
     Uint32 nextRepeat = 0;
@@ -781,8 +778,8 @@ int main() {
 
     while (running) {
         if (dirty) {
-            shownBattery = readBattery(&shownCharging);
-            ui.render(model, shownBattery, shownCharging);
+            shownBattery = readBattery();
+            ui.render(model, shownBattery);
             dirty = false;
         }
 
@@ -800,8 +797,8 @@ int main() {
                 nextRepeat = now + kRepeatRateMs;
             } else {
                 lastActivity = now;
-                bool charging = false;
-                if (readBattery(&charging) != shownBattery || charging != shownCharging) dirty = true;
+                bool wasCharging = batteryCharging;
+                if (readBattery() != shownBattery || batteryCharging != wasCharging) dirty = true;
                 continue;
             }
         }
