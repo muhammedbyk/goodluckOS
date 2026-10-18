@@ -3,6 +3,7 @@ config BR2_PACKAGE_ARE_YOU_SURE
 	depends on BR2_INSTALL_LIBSTDCPP
 	select BR2_PACKAGE_SDL2
 	select BR2_PACKAGE_IMGUI
+	select BR2_PACKAGE_ALSA_LIB
 	help
 	  Are You Sure Script Launcher Application
 
