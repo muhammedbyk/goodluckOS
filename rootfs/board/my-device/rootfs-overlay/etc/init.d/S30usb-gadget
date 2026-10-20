@@ -62,23 +62,34 @@ case "$1" in
         /usr/local/bin/external-card.sh mtp
     fi
 
-    # Bind the gadget to the USB Device Controller. If MTP keeps it from binding, drop MTP
-    # and bind the serial console alone: losing the console is much worse than losing MTP.
-    UDC_NAME=$(ls /sys/class/udc)
-    if ! echo "$UDC_NAME" > UDC 2>>$LOG; then
-        serial_only "bind failed"
-    elif [ -L configs/c.1/ffs.mtp ]; then
-        # The bind can succeed and the PC still not enumerate the device. With a cable in,
-        # a working gadget reaches "configured" in a second or two; give it 15s.
-        (
+    # Bind the gadget to the USB Device Controller, in the background: it can come up a moment
+    # after this script (a late probe), and the boot needn't wait for it. With none at all there
+    # is nothing to bind, MTP or serial, so say why.
+    (
+        i=0
+        while [ -z "$(ls /sys/class/udc 2>/dev/null)" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+        UDC_NAME=$(ls /sys/class/udc 2>/dev/null)
+        if [ -z "$UDC_NAME" ]; then
+            echo "no USB device controller: the USB PHY or musb didn't start (see dmesg)" >> $LOG
+            exit 0
+        fi
+        # If MTP keeps the gadget from binding, drop MTP and bind the serial console alone:
+        # losing the console is much worse than losing MTP.
+        if ! echo "$UDC_NAME" > UDC 2>>$LOG; then
+            serial_only "bind failed"
+        elif [ -L configs/c.1/ffs.mtp ]; then
+            # The bind can succeed and the PC still not enumerate the device. With a cable in,
+            # a working gadget reaches "configured" in a second or two; give it 15s.
             sleep 15
             state=$(cat /sys/class/udc/$UDC_NAME/state)
-            echo "state after 15s: $state" >> $LOG
+            # the port's role: b_peripheral is a device on a PC; a_* is host mode, no PC sees it then
+            role=$(cat /sys/bus/platform/devices/musb-hdrc.*/mode 2>/dev/null)
+            echo "state after 15s: $state, USB power: $(cat /sys/class/power_supply/axp20x-usb/online 2>/dev/null), port role: ${role:-?}" >> $LOG
             if [ "$(cat /sys/class/power_supply/axp20x-usb/online 2>/dev/null)" = "1" ] && [ "$state" != "configured" ]; then
                 serial_only "not enumerated"
             fi
-        ) &
-    fi
+        fi
+    ) &
     ;;
   stop)
     echo "Stopping USB Gadget..."

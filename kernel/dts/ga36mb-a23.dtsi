@@ -57,16 +57,18 @@
     allwinner,pa-gpios = <&pio 7 9 GPIO_ACTIVE_HIGH>; /* PH09 */
 };
 
-&pio {
-    usb0_id_det_pin: usb0-id-det-pin {
-        pins = "PH8";
-        function = "gpio_in";
-        bias-pull-up;
-    };
-};
-
+/* The OTG port is a USB device port here: MTP and the serial console on a PC.
+ *
+ * No usb0_vbus-supply: the GA36-MB has nothing to put 5 V on the port (issue #29), and the AXP
+ * only registers drivevbus with x-powers,drive-vbus-en, which this PMIC node hasn't, so usbphy
+ * waited for it forever ("Couldn't get regulator usb0_vbus... Deferring probe") and took musb,
+ * EHCI and OHCI with it: nothing on the PC, not even the serial console.
+ *
+ * No ID pin: before it had a pull-up, PH8 put the port in host mode at every boot (musb:
+ * "VBUS_ERROR in a_wait_vrise", issue #42), and host mode can't work with no 5 V to give. In OTG
+ * mode with no ID GPIO the PHY makes the port a device, whatever this board does with PH8.
+ * Host mode, for a powered hub, is a write away:
+ *   echo host > /sys/bus/platform/devices/musb-hdrc.*.auto/mode   (peripheral to go back) */
 &usbphy {
-    pinctrl-names = "default";
-    pinctrl-0 = <&usb0_id_det_pin>;
-    usb0_vbus-supply = <&reg_drivevbus>;
+    /delete-property/ usb0_id_det-gpios;
 };
